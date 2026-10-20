@@ -37,7 +37,7 @@ h2{font-size:18px;line-height:1.35;font-weight:800;letter-spacing:-.3px;color:#0
 .who{font-size:11px;color:#999;margin:0 6px 2px}
 .bub{padding:10px 13px;border-radius:16px;font-size:var(--fs,13px);line-height:1.7;overflow-wrap:anywhere}
 .a .bub{background:#fff;border:1px solid #e8e8ea;border-top-left-radius:4px;color:#333}
-.u .bub{background:#0f172a;color:#fff;border-top-right-radius:4px}
+.u .bub{background:#e9e7e7;color:#1f1f1f;border-top-right-radius:4px}
 .bub .h{font-weight:700;margin:0 0 4px}
 .bub .p{margin:0}
 .bub .p+.p,.bub .li+.p,.bub .p+.li,.bub .h+.p,.bub .h+.li{margin-top:6px}
@@ -99,6 +99,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
       <input id="fDate" type="date">
     </div>
     <datalist id="cats"></datalist>
+    <button class="btn" id="fAiCat" type="button">✨ AI로 카테고리 자동분류</button>
     <select id="fAi">
       <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
     </select>
@@ -115,6 +116,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
       <button class="btn" id="cAdd" type="button">＋ 추가</button>
     </div>
     <div class="small" id="cMsg">이름 바꾸면 그 카테고리 대화도 같이 바뀌어. 삭제하면 대화는 "기타"로 이동해.</div>
+    <div class="small" style="margin-top:8px"><b>AI 자동분류</b> · aistudio.google.com 에서 API 키 발급받아서 넣어줘</div>
+    <input id="gKey" type="password" placeholder="Gemini API 키" autocomplete="off">
+    <div class="two">
+      <input id="gModel" placeholder="모델 (비우면 gemini-2.5-flash)">
+      <button class="btn" id="gSave" type="button">키 저장</button>
+    </div>
+    <div class="small" id="gMsg"></div>
   </section>
 
   <section class="panel" id="pBak" hidden>
@@ -387,6 +395,45 @@ function guessCat(text) {
   return bn >= 3 ? best : "";
 }
 
+/* Gemini 자동분류 */
+function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+function hasKey() { return !!lsGet("chat:gkey"); }
+var clsP = null;
+function aiClassify() { if (clsP) return clsP; clsP = doClassify().then(function (v) { clsP = null; return v; }, function () { clsP = null; return ""; }); return clsP; }
+async function doClassify() {
+  var key = lsGet("chat:gkey");
+  if (!key) { $("fPrev").textContent = "분류 패널에서 Gemini API 키부터 넣어줘"; return ""; }
+  var text = turns.map(function (t) { return (t.u.trim() ? "나: " + t.u.trim() + "\n" : "") + (t.a.trim() ? "AI: " + t.a.trim() + "\n" : ""); }).join("\n").trim();
+  if (!text) { $("fPrev").textContent = "대화 내용부터 넣어줘"; return ""; }
+  $("fPrev").textContent = "AI가 읽는 중…";
+  try {
+    var model = lsGet("chat:gmodel") || "gemini-2.5-flash";
+    var prompt = "아래는 사용자와 AI의 대화야. 이 대화가 어느 카테고리에 제일 잘 맞는지 골라줘.\n기존 카테고리: " + JSON.stringify(cats().filter(function (c) { return c !== "기타"; })) +
+      "\n규칙: 기존 카테고리 중에 확실히 맞는 게 있으면 그 이름을 토씨 하나 안 바꾸고 그대로 써. 정말 안 맞으면 짧은 새 카테고리 이름(한국어, 12자 이내)을 만들어. 애매하면 \"기타\".\n반드시 JSON만 출력: {\"cat\":\"카테고리\"}\n\n대화:\n" + text.slice(0, 6000);
+    var r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0 } })
+    });
+    var j = await r.json();
+    if (!r.ok) throw new Error((j.error && j.error.message) || r.status);
+    var out = j.candidates[0].content.parts.map(function (p) { return p.text || ""; }).join("");
+    var v = JSON.parse(out.replace(/```json|```/g, "").trim());
+    var name = String(v.cat || "").trim().slice(0, 20);
+    if (!name) throw new Error("빈 답변");
+    $("fCat").value = name;
+    $("fPrev").textContent = "AI 분류: " + name + (cats().indexOf(name) < 0 ? " (새 카테고리로 만들어질 거야)" : "") + " · 바꿔도 돼";
+    return name;
+  } catch (e) { $("fPrev").textContent = "AI 분류 실패: " + (e.message || e); return ""; }
+}
+$("fAiCat").onclick = function () { aiClassify(); };
+$("gSave").onclick = function () {
+  try {
+    localStorage.setItem("chat:gkey", $("gKey").value.trim()); localStorage.setItem("chat:gmodel", $("gModel").value.trim());
+    $("gMsg").textContent = $("gKey").value.trim() ? "저장됨. 이 브라우저에만 저장되고 서버엔 안 올라가." : "키 지웠어.";
+  } catch (e) { $("gMsg").textContent = "저장 실패 (브라우저가 저장을 막고 있어)"; }
+};
+
 /* 나 / AI 칸 따로 입력 */
 var turns = [];
 function count() {
@@ -412,10 +459,10 @@ function renderTurns() {
     var ta = el("textarea"); ta.placeholder = "AI 답변 붙여넣기"; ta.value = t.a;
     ta.oninput = function () { t.a = ta.value; count(); };
     ta.addEventListener("paste", function () { setTimeout(function () {
-      if (!$("fCat").value.trim()) {
-        var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
-        if (g) { $("fCat").value = g; $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
-      }
+      if ($("fCat").value.trim()) return;
+      if (hasKey()) { aiClassify(); return; }
+      var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
+      if (g) { $("fCat").value = g; $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
     }, 0); });
     w.appendChild(ta);
     box.appendChild(w);
@@ -426,7 +473,8 @@ function resetTurns() { turns = [{ u: "", a: "" }]; renderTurns(); }
 $("fAddTurn").onclick = function () { turns.push({ u: "", a: "" }); renderTurns(); };
 $("fAi").onchange = renderTurns;
 resetTurns();
-$("fSave").onclick = function () {
+$("fSave").onclick = async function () {
+  if (!$("fCat").value.trim() && hasKey()) await aiClassify();
   var msgs = [];
   turns.forEach(function (t) {
     if (t.u.trim()) msgs.push({ r: "u", t: t.u.trim() });
@@ -502,7 +550,7 @@ $("cNew").addEventListener("keydown", function (e) { if (e.key === "Enter") addC
 function togglePanel(id) {
   ["pAdd", "pBak", "pCat"].forEach(function (p) { $(p).hidden = p === id ? !$(p).hidden : true; });
   if (id === "pAdd" && !$("fDate").value) $("fDate").value = today();
-  if (id === "pCat") renderCatPanel();
+  if (id === "pCat") { renderCatPanel(); $("gKey").value = lsGet("chat:gkey"); $("gModel").value = lsGet("chat:gmodel"); }
 }
 $("tAdd").onclick = function () { togglePanel("pAdd"); };
 $("tCat").onclick = function () { togglePanel("pCat"); };
