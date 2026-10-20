@@ -78,7 +78,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     <select id="fAi">
       <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
     </select>
-    <textarea id="fText" placeholder="대화 붙여넣기&#10;&#10;나: 질문&#10;AI: 답변&#10;&#10;이런 식으로 줄 앞에 나: / AI: 가 있으면 자동으로 나눠짐. ChatGPT, Gemini 같은 이름이나 You said: 도 인식함."></textarea>
+    <textarea id="fText" placeholder="대화 붙여넣기&#10;&#10;나: 질문&#10;AI: 답변&#10;&#10;이런 식으로 줄 앞에 나: / AI: 가 있으면 자동으로 나눠짐. ChatGPT, Gemini 같은 이름이나 You said: 도 인식함. 머리말이 없으면 AI 혼자 말하는 글로 보고 문단별로 나눠짐."></textarea>
     <div class="small" id="fPrev"></div>
     <button class="next" id="fSave" type="button" style="height:42px">저장</button>
   </section>
@@ -250,7 +250,13 @@ function parse(text) {
     else if (line.trim()) { cur = { r: "u", t: line }; msgs.push(cur); }
   });
   if (!labeled) {
-    msgs = text.replace(/\r/g, "").split(/\n\s*\n/).map(function (b, i) { return { r: i % 2 ? "a" : "u", t: b }; });
+    var blocks = text.replace(/\r/g, "").split(/\n\s*\n/).map(function (b) { return b.trim(); }).filter(Boolean), out = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var t = blocks[i];
+      while (t.length < 30 && i + 1 < blocks.length) { i++; t += "\n" + blocks[i]; }
+      out.push({ r: "a", t: t });
+    }
+    msgs = out;
   }
   return msgs.map(function (m) { return { r: m.r, t: m.t.trim() }; }).filter(function (m) { return m.t; });
 }
