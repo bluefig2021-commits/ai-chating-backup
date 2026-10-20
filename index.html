@@ -357,6 +357,7 @@ function renderEdit(card) {
     head.appendChild(rb); head.appendChild(db);
     var ta = el("textarea"); ta.value = m.t; ta.rows = Math.min(14, Math.max(3, m.t.split("\n").length + 1));
     ta.oninput = function () { m.t = ta.value; };
+    ta.addEventListener("paste", function (e) { pasteMd(e, ta); });
     row.appendChild(head); row.appendChild(ta); box.appendChild(row);
   });
   var add = el("button", "btn", "＋ 말풍선 추가"); add.type = "button";
@@ -393,6 +394,53 @@ function guessCat(text) {
     if (n > bn) { bn = n; best = k; }
   });
   return bn >= 3 ? best : "";
+}
+
+/* 붙여넣을 때 굵게/제목/목록 서식 살리기 (HTML → 마크다운) */
+function htmlToMd(html) {
+  var doc = new DOMParser().parseFromString(html, "text/html");
+  var SKIP = { SCRIPT: 1, STYLE: 1, BUTTON: 1, SVG: 1, IMG: 1, NOSCRIPT: 1, HEAD: 1, META: 1, LINK: 1, TITLE: 1 };
+  function isBold(e) {
+    var t = e.tagName.toUpperCase(); if (t === "B" || t === "STRONG") return true;
+    var w = (e.style && e.style.fontWeight) || ""; return w === "bold" || w === "bolder" || +w >= 600;
+  }
+  function kids(n, b, lvl) { var o = ""; Array.prototype.forEach.call(n.childNodes, function (c) { o += conv(c, b, lvl); }); return o; }
+  function conv(n, inBold, lvl) {
+    if (n.nodeType === 3) return n.nodeValue.replace(/\s+/g, " ").replace(/\*/g, "");
+    if (n.nodeType !== 1) return "";
+    var tag = n.tagName.toUpperCase();
+    if (SKIP[tag]) return "";
+    if (tag === "BR") return "\n";
+    if (/^H[1-6]$/.test(tag)) return "\n\n## " + kids(n, true, lvl).replace(/\s+/g, " ").trim() + "\n\n";
+    if (tag === "UL" || tag === "OL") {
+      var out = "\n", i = 0, pad = new Array(lvl + 1).join("  ");
+      Array.prototype.forEach.call(n.children, function (li) {
+        if (li.tagName.toUpperCase() !== "LI") { out += conv(li, inBold, lvl); return; }
+        i++; out += pad + (tag === "OL" ? i + ". " : "- ") + kids(li, inBold, lvl + 1).trim() + "\n";
+      });
+      return out + "\n";
+    }
+    var bold = !inBold && isBold(n), inner = kids(n, inBold || bold, lvl);
+    if (bold) {
+      var lead = (inner.match(/^\s*/) || [""])[0], trail = (inner.match(/\s*$/) || [""])[0], core = inner.trim();
+      return core ? lead + "**" + core + "**" + trail : inner;
+    }
+    if (tag === "P") return "\n\n" + inner.trim() + "\n\n";
+    if (tag === "DIV" || tag === "SECTION" || tag === "ARTICLE" || tag === "BLOCKQUOTE" || tag === "TR" || tag === "PRE") return "\n" + inner + "\n";
+    return inner;
+  }
+  return conv(doc.body, false, 0).replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+(?=\S)(?![-\d])/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+function pasteMd(e, ta) {
+  try {
+    var cd = e.clipboardData; if (!cd) return false;
+    var html = cd.getData("text/html"); if (!html) return false;
+    var md = htmlToMd(html); if (!md) return false;
+    e.preventDefault();
+    ta.setRangeText(md, ta.selectionStart, ta.selectionEnd, "end");
+    ta.dispatchEvent(new Event("input"));
+    return true;
+  } catch (err) { return false; }
 }
 
 /* Gemini 자동분류 */
@@ -454,11 +502,12 @@ function renderTurns() {
     w.appendChild(el("div", "lab", "나"));
     var tu = el("textarea", "tu"); tu.placeholder = "내 질문 붙여넣기"; tu.value = t.u;
     tu.oninput = function () { t.u = tu.value; count(); };
+    tu.addEventListener("paste", function (e) { pasteMd(e, tu); });
     w.appendChild(tu);
     w.appendChild(el("div", "lab", $("fAi").value));
     var ta = el("textarea"); ta.placeholder = "AI 답변 붙여넣기"; ta.value = t.a;
     ta.oninput = function () { t.a = ta.value; count(); };
-    ta.addEventListener("paste", function () { setTimeout(function () {
+    ta.addEventListener("paste", function (e) { pasteMd(e, ta); setTimeout(function () {
       if ($("fCat").value.trim()) return;
       if (hasKey()) { aiClassify(); return; }
       var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
