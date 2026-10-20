@@ -95,10 +95,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   <section class="panel" id="pAdd" hidden>
     <input id="fTitle" placeholder="제목 (비우면 첫 줄로 자동)">
     <div class="two">
-      <input id="fCat" list="cats" placeholder="카테고리 (직접 입력 가능)">
+      <input id="fCat" placeholder="카테고리 (직접 입력하면 새로 추가돼)">
       <input id="fDate" type="date">
     </div>
     <datalist id="cats"></datalist>
+    <div class="chips" id="fCatChips" style="margin:0"></div>
     <button class="btn" id="fAiCat" type="button">✨ AI로 카테고리 자동분류</button>
     <select id="fAi">
       <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
@@ -344,9 +345,13 @@ function renderEdit(card) {
   card.textContent = "";
   var box = el("div", "ed"), two = el("div", "two");
   box.appendChild(field("제목", draft.title, function (v) { draft.title = v; }));
-  var catIn = field("카테고리", draft.cat, function (v) { draft.cat = v; }); catIn.setAttribute("list", "cats");
+  var catIn = field("카테고리", draft.cat, function (v) { draft.cat = v; }); 
   two.appendChild(catIn); two.appendChild(field("", draft.date, function (v) { draft.date = v; }, "date"));
   box.appendChild(two);
+  var cc = el("div", "chips"); cc.style.margin = "0";
+  var pickIt = function (v) { draft.cat = v; };
+  pickChips(cc, catIn, pickIt); box.appendChild(cc);
+  var baseIn = catIn.oninput; catIn.oninput = function () { baseIn(); pickChips(cc, catIn, pickIt); };
   box.appendChild(field("AI 이름", draft.ai, function (v) { draft.ai = v; }));
   draft.msgs.forEach(function (m, i) {
     var row = el("div", "mrow"), head = el("div", "mhead");
@@ -443,6 +448,20 @@ function pasteMd(e, ta) {
   } catch (err) { return false; }
 }
 
+/* 카테고리 선택 버튼 */
+function pickChips(box, input, onPick) {
+  box.textContent = "";
+  var cur = input.value.trim(), names = cats();
+  if (cur && names.indexOf(cur) < 0) names.push(cur);
+  names.forEach(function (name) {
+    var b = el("button", "btn" + (name === cur ? " on" : ""), name); b.type = "button";
+    b.onclick = function () { input.value = name; if (onPick) onPick(name); pickChips(box, input, onPick); };
+    box.appendChild(b);
+  });
+}
+function renderFChips() { pickChips($("fCatChips"), $("fCat"), null); }
+$("fCat").oninput = renderFChips;
+
 /* Gemini 자동분류 */
 function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
 function hasKey() { return !!lsGet("chat:gkey"); }
@@ -469,7 +488,7 @@ async function doClassify() {
     var v = JSON.parse(out.replace(/```json|```/g, "").trim());
     var name = String(v.cat || "").trim().slice(0, 20);
     if (!name) throw new Error("빈 답변");
-    $("fCat").value = name;
+    $("fCat").value = name; renderFChips();
     $("fPrev").textContent = "AI 분류: " + name + (cats().indexOf(name) < 0 ? " (새 카테고리로 만들어질 거야)" : "") + " · 바꿔도 돼";
     return name;
   } catch (e) { $("fPrev").textContent = "AI 분류 실패: " + (e.message || e); return ""; }
@@ -511,7 +530,7 @@ function renderTurns() {
       if ($("fCat").value.trim()) return;
       if (hasKey()) { aiClassify(); return; }
       var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
-      if (g) { $("fCat").value = g; $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
+      if (g) { $("fCat").value = g; renderFChips(); $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
     }, 0); });
     w.appendChild(ta);
     box.appendChild(w);
@@ -533,7 +552,7 @@ $("fSave").onclick = async function () {
   var title = $("fTitle").value.trim() || msgs[0].t.split("\n")[0].slice(0, 40);
   var c = { id: "c" + Date.now(), title: title, cat: $("fCat").value.trim() || guessCat(msgs.map(function (m) { return m.t; }).join("\n")) || "기타", date: $("fDate").value || today(), ai: $("fAi").value, msgs: msgs };
   convs.push(c); save();
-  $("fTitle").value = ""; resetTurns(); $("pAdd").hidden = true;
+  $("fTitle").value = ""; $("fCat").value = ""; resetTurns(); $("pAdd").hidden = true;
   cat = "전체"; idx = list().findIndex(function (x) { return x.id === c.id; }); render();
 };
 
@@ -567,6 +586,7 @@ function renderCatPanel() {
     }
     box.appendChild(row);
   });
+  renderFChips();
 }
 function renameCat(a, b) {
   if (!b || b === a) return;
@@ -598,7 +618,7 @@ $("cNew").addEventListener("keydown", function (e) { if (e.key === "Enter") addC
 
 function togglePanel(id) {
   ["pAdd", "pBak", "pCat"].forEach(function (p) { $(p).hidden = p === id ? !$(p).hidden : true; });
-  if (id === "pAdd" && !$("fDate").value) $("fDate").value = today();
+  if (id === "pAdd") { if (!$("fDate").value) $("fDate").value = today(); renderFChips(); }
   if (id === "pCat") { renderCatPanel(); $("gKey").value = lsGet("chat:gkey"); $("gModel").value = lsGet("chat:gmodel"); }
 }
 $("tAdd").onclick = function () { togglePanel("pAdd"); };
