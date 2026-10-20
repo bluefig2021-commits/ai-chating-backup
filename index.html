@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>대화방</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mute:#78716c;--line:#e7e5e4;--surf:#f1f0ee;--acc:#1c1917;--accfg:#fff;--card:#fff;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0a09;--fg:#f5f5f4;--mute:#a8a29e;--line:#292524;--surf:#221f1d;--acc:#f5f5f4;--accfg:#0c0a09;--card:#141211;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0c0a09;--fg:#f5f5f4;--mute:#a8a29e;--line:#292524;--surf:#221f1d;--acc:#f5f5f4;--accfg:#0c0a09;--card:#141211;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",Roboto,Helvetica,Arial,sans-serif;word-break:keep-all;padding:16px 14px 40px}
+.wrap{max-width:520px;margin:0 auto}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.logo{font-size:22px;font-weight:800;letter-spacing:-.5px}
+button,input,select,textarea{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--mute)}
+.btn.on{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.ctl{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.round{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:17px;flex:none}
+.rand{flex:1;height:42px;border:0;border-radius:999px;background:var(--acc);color:var(--accfg);font-weight:700;letter-spacing:1px;cursor:pointer}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;min-height:300px;display:flex;flex-direction:column}
+.top{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--mute)}
+.tag{background:var(--acc);color:var(--accfg);border-radius:999px;padding:3px 10px;font-weight:600}
+h2{font-size:18px;line-height:1.35;margin:0 0 12px;letter-spacing:-.3px}
+.chat{display:flex;flex-direction:column;gap:8px;flex:1;cursor:pointer;min-height:140px}
+.row{display:flex;flex-direction:column;max-width:86%;animation:pop .18s ease-out}
+.row.a{align-self:flex-start;align-items:flex-start}
+.row.u{align-self:flex-end;align-items:flex-end}
+.who{font-size:11px;color:var(--mute);margin:0 6px 2px}
+.bub{padding:10px 13px;border-radius:16px;font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.a .bub{background:var(--surf);border-top-left-radius:4px}
+.u .bub{background:var(--acc);color:var(--accfg);border-top-right-radius:4px}
+.bub.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.more{border:0;background:none;color:var(--mute);font-size:12px;text-decoration:underline;cursor:pointer;padding:3px 6px}
+.hint{color:var(--mute);font-size:13px;text-align:center;margin:auto}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.row{animation:none}}
+.foot{display:flex;align-items:center;gap:10px;margin-top:14px}
+.next{flex:1;height:46px;border:0;border-radius:14px;background:var(--acc);color:var(--accfg);font-weight:700;font-size:15px;cursor:pointer}
+.prog{font-size:12px;color:var(--mute);min-width:48px;text-align:right}
+.panel{border:1px solid var(--line);background:var(--card);border-radius:16px;padding:14px;margin-bottom:14px;display:grid;gap:8px}
+.panel[hidden]{display:none}
+.panel input,.panel select,.panel textarea{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px;width:100%;box-sizing:border-box;font-size:14px}
+.panel textarea{min-height:140px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.small{font-size:12px;color:var(--mute);line-height:1.5}
+.danger{color:#dc2626}
+.meta{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--mute)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap" id="login" hidden>
+  <div class="logo" style="margin:40px 0 16px">대화방</div>
+  <button class="next" id="gLogin" type="button" style="width:100%">Google로 로그인</button>
+  <div class="small" id="lErr" style="margin-top:10px"></div>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <div class="head">
+    <div class="logo">대화방</div>
+    <div style="display:flex;gap:6px">
+      <button class="btn" id="tAdd" type="button">＋ 추가</button>
+      <button class="btn" id="tBak" type="button">백업</button>
+      <button class="btn" id="out" type="button">로그아웃</button>
+    </div>
+  </div>
+
+  <section class="panel" id="pAdd" hidden>
+    <input id="fTitle" placeholder="제목 (비우면 첫 줄로 자동)">
+    <div class="two">
+      <input id="fCat" list="cats" placeholder="카테고리 (직접 입력 가능)">
+      <input id="fDate" type="date">
+    </div>
+    <datalist id="cats"></datalist>
+    <select id="fAi">
+      <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
+    </select>
+    <textarea id="fText" placeholder="대화 붙여넣기&#10;&#10;나: 질문&#10;AI: 답변&#10;&#10;이런 식으로 줄 앞에 나: / AI: 가 있으면 자동으로 나눠짐. ChatGPT, Gemini 같은 이름이나 You said: 도 인식함."></textarea>
+    <div class="small" id="fPrev"></div>
+    <button class="next" id="fSave" type="button" style="height:42px">저장</button>
+  </section>
+
+  <section class="panel" id="pBak" hidden>
+    <div class="small">이 사이트 데이터는 이 브라우저에만 저장돼. 기기 바꾸거나 캐시 지우면 날아가니까 가끔 내보내기로 복사해서 메모장 같은 데 보관해둬.</div>
+    <textarea id="bTxt" placeholder="여기에 백업 JSON이 나오거나, 가져올 JSON을 붙여넣어"></textarea>
+    <div class="two">
+      <button class="btn" id="bOut" type="button">내보내기 (복사)</button>
+      <button class="btn" id="bIn" type="button">가져오기 (합치기)</button>
+    </div>
+    <div class="small" id="bMsg"></div>
+  </section>
+
+  <div class="small" id="st" style="margin-bottom:8px"></div>
+  <div class="chips" id="chips" role="group" aria-label="카테고리"></div>
+
+  <div class="ctl">
+    <button class="round" id="prev" type="button" aria-label="이전 대화">←</button>
+    <button class="rand" id="rand" type="button">RANDOM</button>
+    <button class="round" id="nextC" type="button" aria-label="다음 대화">→</button>
+  </div>
+
+  <article class="card" id="card"></article>
+  <div class="meta"><span id="count"></span><button class="btn danger" id="del" type="button">이 대화 삭제</button></div>
+</div>
+
+<script type="module">
+var $ = function (id) { return document.getElementById(id); };
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+const ADMIN_EMAIL = "raizn199x@gmail.com";
+const firebaseConfig = {
+  apiKey: "AIzaSyATMcuUcUeWVmIXLAO1DAX3eAxiphf8gYc",
+  authDomain: "reading-8c814.firebaseapp.com",
+  projectId: "reading-8c814",
+  storageBucket: "reading-8c814.firebasestorage.app",
+  messagingSenderId: "765596616012",
+  appId: "1:765596616012:web:fba2289033b34cd23e3be9",
+  measurementId: "G-FT8GR3ZD94"
+};
+const fbApp = initializeApp(firebaseConfig), auth = getAuth(fbApp), db = getFirestore(fbApp);
+var synced = {};
+function status(t) { $("st").textContent = t; }
+var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
+var convs = [], cat = "전체", idx = 0, shown = {};
+
+function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+async function save() {
+  try {
+    for (var i = 0; i < convs.length; i++) {
+      var c = convs[i], s = JSON.stringify(c);
+      if (synced[c.id] !== s) { await setDoc(doc(db, "chats", c.id), c); synced[c.id] = s; }
+    }
+    var ids = Object.keys(synced);
+    for (var j = 0; j < ids.length; j++) {
+      if (!convs.some(function (x) { return x.id === ids[j]; })) { await deleteDoc(doc(db, "chats", ids[j])); delete synced[ids[j]]; }
+    }
+    status("저장됨");
+  } catch (e) { status("저장 실패: Firestore 규칙 확인해봐 (" + (e.code || e.message) + ")"); }
+}
+async function loadRemote() {
+  var snap = await getDocs(collection(db, "chats"));
+  convs = []; synced = {};
+  snap.forEach(function (d) { var c = d.data(); c.id = d.id; convs.push(c); synced[c.id] = JSON.stringify(c); });
+}
+function cats() {
+  var s = DEFAULT_CATS.slice();
+  convs.forEach(function (c) { if (s.indexOf(c.cat) < 0) s.push(c.cat); });
+  return s;
+}
+function list() {
+  return convs.filter(function (c) { return cat === "전체" || c.cat === cat; })
+    .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+}
+function fmt(d) { return d.replace(/-/g, "."); }
+function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+function renderChips() {
+  var box = $("chips"); box.textContent = "";
+  ["전체"].concat(cats()).forEach(function (c) {
+    var b = el("button", "btn" + (c === cat ? " on" : ""), c);
+    b.type = "button";
+    b.onclick = function () { cat = c; idx = 0; render(); };
+    box.appendChild(b);
+  });
+  var dl = $("cats"); dl.textContent = "";
+  cats().forEach(function (c) { var o = document.createElement("option"); o.value = c; dl.appendChild(o); });
+}
+
+function addBubble(chat, m, conv) {
+  var row = el("div", "row " + m.r);
+  row.appendChild(el("div", "who", m.r === "u" ? "나" : conv.ai));
+  var b = el("div", "bub", m.t);
+  row.appendChild(b);
+  if (m.t.length > 200) {
+    b.classList.add("clamp");
+    var mb = el("button", "more", "더보기"); mb.type = "button";
+    mb.onclick = function (e) { e.stopPropagation(); var c = b.classList.toggle("clamp"); mb.textContent = c ? "더보기" : "접기"; };
+    row.appendChild(mb);
+  }
+  chat.appendChild(row);
+  return row;
+}
+
+function render() {
+  renderChips();
+  var L = list(), card = $("card"); card.textContent = "";
+  $("count").textContent = L.length ? (idx + 1) + " / " + L.length : "";
+  $("del").style.visibility = L.length ? "visible" : "hidden";
+  if (!L.length) { card.appendChild(el("div", "hint", "이 카테고리엔 아직 대화가 없어. ＋ 추가로 넣어봐")); return; }
+  if (idx >= L.length) idx = 0;
+  var c = L[idx], n = c.msgs.length, k = shown[c.id] || 0;
+  var top = el("div", "top"); top.appendChild(el("span", "tag", c.cat)); top.appendChild(el("span", "", fmt(c.date) + " · " + c.ai));
+  card.appendChild(top); card.appendChild(el("h2", "", c.title));
+  var chat = el("div", "chat"); chat.id = "chat";
+  chat.onclick = advance;
+  if (!k) chat.appendChild(el("div", "hint", "탭하면 첫 말풍선이 나와"));
+  for (var i = 0; i < k; i++) addBubble(chat, c.msgs[i], c);
+  card.appendChild(chat);
+  var foot = el("div", "foot");
+  var nb = el("button", "next", k === 0 ? "시작 ▸" : k < n ? "다음 ▸" : "끝 · 처음부터");
+  nb.type = "button"; nb.onclick = advance;
+  foot.appendChild(nb); foot.appendChild(el("div", "prog", k + " / " + n));
+  card.appendChild(foot);
+}
+
+function advance() {
+  var L = list(); if (!L.length) return;
+  var c = L[idx], k = shown[c.id] || 0;
+  if (k >= c.msgs.length) { shown[c.id] = 0; render(); return; }
+  shown[c.id] = k + 1;
+  var chat = $("chat"); if (k === 0) chat.textContent = "";
+  var row = addBubble(chat, c.msgs[k], c);
+  var n = c.msgs.length, nk = k + 1;
+  var nb = document.querySelector(".next"); nb.textContent = nk < n ? "다음 ▸" : "끝 · 처음부터";
+  document.querySelector(".prog").textContent = nk + " / " + n;
+  row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+$("prev").onclick = function () { var L = list(); if (L.length) { idx = (idx - 1 + L.length) % L.length; render(); } };
+$("nextC").onclick = function () { var L = list(); if (L.length) { idx = (idx + 1) % L.length; render(); } };
+$("rand").onclick = function () {
+  var L = list(); if (!L.length) return;
+  var j = idx; if (L.length > 1) while (j === idx) j = Math.floor(Math.random() * L.length);
+  idx = j; shown[L[idx].id] = 0; render();
+};
+$("del").onclick = function () {
+  var L = list(); if (!L.length) return;
+  var c = L[idx];
+  if (!confirm("“" + c.title + "” 삭제할까?")) return;
+  convs = convs.filter(function (x) { return x.id !== c.id; }); save(); idx = 0; render();
+};
+document.addEventListener("keydown", function (e) {
+  var t = e.target.tagName; if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || t === "BUTTON") return;
+  if (e.key === " " || e.key === "ArrowRight") { e.preventDefault(); advance(); }
+});
+
+/* 붙여넣기 파서 */
+var U = "(?:나|me|user|you said|you|사용자|유저|human)", A = "(?:ai 모드|ai|assistant|claude|chatgpt said|chatgpt|gemini|제미나이|챗지피티|model|bot)";
+var LABEL = new RegExp("^\\s*(?:(" + U + ")|(" + A + "))\\s*[:：]\\s*(.*)$", "i");
+function parse(text) {
+  var msgs = [], cur = null, labeled = false;
+  text.replace(/\r/g, "").split("\n").forEach(function (line) {
+    var m = line.match(LABEL);
+    if (m) { labeled = true; cur = { r: m[1] ? "u" : "a", t: m[3] }; msgs.push(cur); }
+    else if (cur) cur.t += "\n" + line;
+    else if (line.trim()) { cur = { r: "u", t: line }; msgs.push(cur); }
+  });
+  if (!labeled) {
+    msgs = text.replace(/\r/g, "").split(/\n\s*\n/).map(function (b, i) { return { r: i % 2 ? "a" : "u", t: b }; });
+  }
+  return msgs.map(function (m) { return { r: m.r, t: m.t.trim() }; }).filter(function (m) { return m.t; });
+}
+$("fText").oninput = function () {
+  var n = parse($("fText").value).length;
+  $("fPrev").textContent = n ? "말풍선 " + n + "개로 나눠짐" : "";
+};
+$("fSave").onclick = function () {
+  var msgs = parse($("fText").value);
+  if (!msgs.length) { $("fPrev").textContent = "대화 내용부터 붙여넣어"; return; }
+  var title = $("fTitle").value.trim() || msgs[0].t.split("\n")[0].slice(0, 40);
+  var c = { id: "c" + Date.now(), title: title, cat: $("fCat").value.trim() || "기타", date: $("fDate").value || today(), ai: $("fAi").value, msgs: msgs };
+  convs.push(c); save();
+  ["fTitle", "fText", "fPrev"].forEach(function (i) { var e = $(i); if (e.value != null && e.tagName !== "DIV") e.value = ""; });
+  $("fPrev").textContent = ""; $("pAdd").hidden = true;
+  cat = "전체"; idx = list().findIndex(function (x) { return x.id === c.id; }); shown[c.id] = 0; render();
+};
+
+/* 백업 */
+$("bOut").onclick = function () {
+  var s = JSON.stringify(convs); $("bTxt").value = s;
+  var ok = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(s) : Promise.reject();
+  ok.then(function () { $("bMsg").textContent = "복사됨. 메모장 같은 데 붙여넣어서 보관해."; })
+    .catch(function () { $("bTxt").select(); $("bMsg").textContent = "복사가 막혀서 위 칸에 띄워놨어. 직접 전체 선택해서 복사해."; });
+};
+$("bIn").onclick = function () {
+  try {
+    var v = JSON.parse($("bTxt").value); if (!Array.isArray(v)) throw 0;
+    var have = {}; convs.forEach(function (c) { have[c.id] = 1; }); var add = 0;
+    v.forEach(function (c) { if (c && c.id && Array.isArray(c.msgs) && !have[c.id]) { convs.push(c); add++; } });
+    save(); render(); $("bMsg").textContent = add + "개 가져옴";
+  } catch (e) { $("bMsg").textContent = "JSON 형식이 안 맞아"; }
+};
+
+$("tAdd").onclick = function () { $("pAdd").hidden = !$("pAdd").hidden; $("pBak").hidden = true; if (!$("fDate").value) $("fDate").value = today(); };
+$("tBak").onclick = function () { $("pBak").hidden = !$("pBak").hidden; $("pAdd").hidden = true; };
+
+$("gLogin").onclick = function () { signInWithPopup(auth, new GoogleAuthProvider()).catch(function (e) { $("lErr").textContent = "로그인 실패: " + (e.code || e.message); }); };
+$("out").onclick = function () { signOut(auth); };
+setPersistence(auth, browserLocalPersistence).catch(function () {});
+onAuthStateChanged(auth, async function (user) {
+  if (!user) { $("app").hidden = true; $("login").hidden = false; return; }
+  if (user.email !== ADMIN_EMAIL) { $("lErr").textContent = "이 계정은 권한이 없어."; $("app").hidden = true; $("login").hidden = false; await signOut(auth); return; }
+  $("login").hidden = true; $("app").hidden = false; status("불러오는 중…");
+  try { await loadRemote(); status(""); } catch (e) { convs = []; status("불러오기 실패: Firestore 규칙 확인해봐 (" + (e.code || e.message) + ")"); }
+  render();
+});
+</script>
+</body>
+</html>
