@@ -29,10 +29,15 @@ h2{font-size:18px;line-height:1.35;margin:0 0 12px;letter-spacing:-.3px}
 .row.a{align-self:flex-start;align-items:flex-start}
 .row.u{align-self:flex-end;align-items:flex-end}
 .who{font-size:11px;color:var(--mute);margin:0 6px 2px}
-.bub{padding:10px 13px;border-radius:16px;font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.bub{padding:10px 13px;border-radius:16px;font-size:15px;line-height:1.65;overflow-wrap:anywhere}
+.bub .h{font-weight:700;margin:0 0 4px}
+.bub .p{margin:0}
+.bub .p+.p,.bub .li+.p,.bub .p+.li,.bub .h+.p,.bub .h+.li{margin-top:6px}
+.bub .li{padding-left:1em;text-indent:-1em;margin-top:3px}
+.bub strong{font-weight:700}
 .a .bub{background:var(--surf);border-top-left-radius:4px}
 .u .bub{background:var(--acc);color:var(--accfg);border-top-right-radius:4px}
-.bub.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.bub.clamp{display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
 .more{border:0;background:none;color:var(--mute);font-size:12px;text-decoration:underline;cursor:pointer;padding:3px 6px}
 .hint{color:var(--mute);font-size:13px;text-align:center;margin:auto}
 @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -60,7 +65,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방</div>
+    <div class="logo">대화방 <span style="font-size:10px;color:var(--mute);font-weight:400">v7</span></div>
     <div style="display:flex;gap:6px">
       <button class="btn" id="tAdd" type="button">＋ 추가</button>
       <button class="btn" id="tBak" type="button">백업</button>
@@ -170,12 +175,54 @@ function renderChips() {
   cats().forEach(function (c) { var o = document.createElement("option"); o.value = c; dl.appendChild(o); });
 }
 
+function inline(parent, s) {
+  s.split(/(\*\*[^*]+\*\*)/).forEach(function (p) {
+    if (!p) return;
+    if (/^\*\*[^*]+\*\*$/.test(p)) { var st = document.createElement("strong"); st.textContent = p.slice(2, -2); parent.appendChild(st); }
+    else parent.appendChild(document.createTextNode(p));
+  });
+}
+function renderMd(parent, t) {
+  t.split("\n").forEach(function (line) {
+    if (!line.trim()) return;
+    var m, d;
+    if ((m = line.match(/^\s*#{1,6}\s+(.*)$/))) { d = el("div", "h"); inline(d, m[1]); }
+    else if ((m = line.match(/^\s*[*\-•]\s+(.*)$/))) { d = el("div", "li"); inline(d, "• " + m[1]); }
+    else if ((m = line.match(/^\s*(\d+)[.)]\s+(.*)$/))) { d = el("div", "li"); inline(d, m[1] + ". " + m[2]); }
+    else { d = el("div", "p"); inline(d, line.trim()); }
+    parent.appendChild(d);
+  });
+}
+function splitLong(b) {
+  var units = [], out = [], cur = "";
+  b.split("\n").forEach(function (line) {
+    line = line.trim(); if (!line) return;
+    if (line.length > 280) (line.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g) || [line]).forEach(function (s, i) { units.push({ t: s.trim(), sep: i ? " " : "\n" }); });
+    else units.push({ t: line, sep: "\n" });
+  });
+  units.forEach(function (u) {
+    if (cur && (cur + u.sep + u.t).length > 280) { out.push(cur); cur = ""; }
+    cur += (cur ? u.sep : "") + u.t;
+  });
+  if (cur) out.push(cur);
+  return out;
+}
+function chunkify(t) {
+  var blocks = t.replace(/\r/g, "").split(/\n\s*\n/).map(function (s) { return s.trim(); }).filter(Boolean), out = [];
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    if (i + 1 < blocks.length && b.length < 120 && b.indexOf("\n") < 0 && (b.length < 40 || /^#{1,6}\s/.test(b))) { blocks[i + 1] = b + "\n\n" + blocks[i + 1]; continue; }
+    if (b.length > 320) splitLong(b).forEach(function (x) { out.push(x); }); else out.push(b);
+  }
+  return out;
+}
+function view(c) { return c.msgs; }
 function addBubble(chat, m, conv) {
   var row = el("div", "row " + m.r);
   row.appendChild(el("div", "who", m.r === "u" ? "나" : conv.ai));
-  var b = el("div", "bub", m.t);
+  var b = el("div", "bub"); renderMd(b, m.t);
   row.appendChild(b);
-  if (m.t.length > 200) {
+  if (m.t.length > 400) {
     b.classList.add("clamp");
     var mb = el("button", "more", "더보기"); mb.type = "button";
     mb.onclick = function (e) { e.stopPropagation(); var c = b.classList.toggle("clamp"); mb.textContent = c ? "더보기" : "접기"; };
@@ -192,13 +239,13 @@ function render() {
   $("del").style.visibility = L.length ? "visible" : "hidden";
   if (!L.length) { card.appendChild(el("div", "hint", "이 카테고리엔 아직 대화가 없어. ＋ 추가로 넣어봐")); return; }
   if (idx >= L.length) idx = 0;
-  var c = L[idx], n = c.msgs.length, k = shown[c.id] || 0;
+  var c = L[idx], V = view(c), n = V.length, k = shown[c.id] || 0;
   var top = el("div", "top"); top.appendChild(el("span", "tag", c.cat)); top.appendChild(el("span", "", fmt(c.date) + " · " + c.ai));
   card.appendChild(top); card.appendChild(el("h2", "", c.title));
   var chat = el("div", "chat"); chat.id = "chat";
-  chat.onclick = advance;
+  chat.onclick = function () { if (String(window.getSelection()).length) return; advance(); };
   if (!k) chat.appendChild(el("div", "hint", "탭하면 첫 말풍선이 나와"));
-  for (var i = 0; i < k; i++) addBubble(chat, c.msgs[i], c);
+  for (var i = 0; i < k; i++) addBubble(chat, V[i], c);
   card.appendChild(chat);
   var foot = el("div", "foot");
   var nb = el("button", "next", k === 0 ? "시작 ▸" : k < n ? "다음 ▸" : "끝 · 처음부터");
@@ -209,12 +256,12 @@ function render() {
 
 function advance() {
   var L = list(); if (!L.length) return;
-  var c = L[idx], k = shown[c.id] || 0;
-  if (k >= c.msgs.length) { shown[c.id] = 0; render(); return; }
+  var c = L[idx], V = view(c), k = shown[c.id] || 0;
+  if (k >= V.length) { shown[c.id] = 0; render(); return; }
   shown[c.id] = k + 1;
   var chat = $("chat"); if (k === 0) chat.textContent = "";
-  var row = addBubble(chat, c.msgs[k], c);
-  var n = c.msgs.length, nk = k + 1;
+  var row = addBubble(chat, V[k], c);
+  var n = V.length, nk = k + 1;
   var nb = document.querySelector(".next"); nb.textContent = nk < n ? "다음 ▸" : "끝 · 처음부터";
   document.querySelector(".prog").textContent = nk + " / " + n;
   row.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -250,21 +297,33 @@ function parse(text) {
     else if (line.trim()) { cur = { r: "u", t: line }; msgs.push(cur); }
   });
   if (!labeled) {
-    var blocks = text.replace(/\r/g, "").split(/\n\s*\n/).map(function (b) { return b.trim(); }).filter(Boolean), out = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var t = blocks[i];
-      while (t.length < 30 && i + 1 < blocks.length) { i++; t += "\n" + blocks[i]; }
-      out.push({ r: "a", t: t });
-    }
-    msgs = out;
+    msgs = [{ r: "a", t: text.trim() }];
   }
-  return msgs.map(function (m) { return { r: m.r, t: m.t.trim() }; }).filter(function (m) { return m.t; });
+  return msgs.map(function (m) {
+    return { r: m.r, t: m.t.trim() };
+  }).filter(function (m) { return m.t; });
 }
+function applyMeta() {
+  var lines = $("fText").value.replace(/\r/g, "").split("\n"), meta = {}, i = 0, found = false;
+  while (i < lines.length) {
+    var m = lines[i].match(/^\s*(제목|카테고리|날짜)\s*[:：]\s*(.*)$/);
+    if (!m) { if (!lines[i].trim() && found) { i++; continue; } break; }
+    meta[m[1]] = m[2].trim(); found = true; i++;
+  }
+  if (!found) return;
+  if (meta["제목"]) $("fTitle").value = meta["제목"];
+  if (meta["카테고리"]) $("fCat").value = meta["카테고리"];
+  var d = (meta["날짜"] || "").match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+  if (d) $("fDate").value = d[1] + "-" + d[2].padStart(2, "0") + "-" + d[3].padStart(2, "0");
+  $("fText").value = lines.slice(i).join("\n");
+}
+$("fText").addEventListener("paste", function () { setTimeout(function () { applyMeta(); $("fText").oninput(); }, 0); });
 $("fText").oninput = function () {
   var n = parse($("fText").value).length;
   $("fPrev").textContent = n ? "말풍선 " + n + "개로 나눠짐" : "";
 };
 $("fSave").onclick = function () {
+  applyMeta();
   var msgs = parse($("fText").value);
   if (!msgs.length) { $("fPrev").textContent = "대화 내용부터 붙여넣어"; return; }
   var title = $("fTitle").value.trim() || msgs[0].t.split("\n")[0].slice(0, 40);
