@@ -11,9 +11,9 @@ body{margin:0;background:#fff;color:#333;font-family:-apple-system,BlinkMacSyste
 button,input,select,textarea{font:inherit;color:inherit}
 .wrap{max-width:520px;margin:0 auto;background:#fff;border:1px solid #e3e3e3;border-radius:24px;padding:clamp(18px,4vw,32px)}
 .wrap[hidden]{display:none}
-#login{display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:40vh;gap:20px}
 #login[hidden]{display:none}
-  #login .logo{margin:0}
+#login{display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:40vh;gap:20px}
+#login .logo{margin:0}
 #gLogin{flex:none;width:auto;height:42px;padding:0 26px;border-radius:20px;background:#000}
 #lErr{color:#ff4d4f;text-align:center;min-height:16px;margin:0}
 .head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
@@ -63,6 +63,12 @@ h2{font-size:18px;line-height:1.35;font-weight:800;letter-spacing:-.3px;color:#0
 .ed textarea{resize:vertical;line-height:1.6}
 .mrow{background:#fff;border:1px solid #e8e8ea;border-radius:12px;padding:8px;display:grid;gap:6px}
 .mhead{display:flex;justify-content:space-between;align-items:center}
+.turn{background:#fff;border:1px solid #e8e8ea;border-radius:12px;padding:8px;display:grid;gap:6px}
+.lab{font-size:11px;font-weight:700;color:#999;letter-spacing:.5px}
+.turn textarea{min-height:84px;line-height:1.6}
+.turn textarea.tu{background:#eef0f5}
+.crow{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center}
+.crow input:disabled{background:#f0f0f0;color:#999}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #0f172a;outline-offset:2px}
 </style>
 </head>
@@ -76,10 +82,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <div class="wrap" id="app" hidden>
   <div class="head">
     <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v10</span></div>
-    <div style="display:flex;gap:6px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
       <button class="btn" id="tAdd" type="button">＋ 추가</button>
+      <button class="btn" id="tCat" type="button">분류</button>
       <button class="btn" id="tBak" type="button">백업</button>
       <button class="btn" id="out" type="button">로그아웃</button>
     </div>
@@ -95,9 +102,19 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     <select id="fAi">
       <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
     </select>
-    <textarea id="fText" placeholder="대화 붙여넣기&#10;&#10;나: 질문&#10;AI: 답변&#10;&#10;이런 식으로 줄 앞에 나: / AI: 가 있으면 자동으로 나눠짐. ChatGPT, Gemini 같은 이름이나 You said: 도 인식함. 머리말이 없으면 AI 혼자 말하는 글로 보고 문단별로 나눠짐."></textarea>
+    <div id="fTurns" style="display:grid;gap:8px"></div>
+    <button class="btn" id="fAddTurn" type="button">＋ 질문/답변 칸 추가</button>
     <div class="small" id="fPrev"></div>
     <button class="next" id="fSave" type="button" style="height:42px">저장</button>
+  </section>
+
+  <section class="panel" id="pCat" hidden>
+    <div id="catList" style="display:grid;gap:6px"></div>
+    <div class="two">
+      <input id="cNew" placeholder="새 카테고리 이름">
+      <button class="btn" id="cAdd" type="button">＋ 추가</button>
+    </div>
+    <div class="small" id="cMsg">이름 바꾸면 그 카테고리 대화도 같이 바뀌어. 삭제하면 대화는 "기타"로 이동해.</div>
   </section>
 
   <section class="panel" id="pBak" hidden>
@@ -142,11 +159,14 @@ const fbApp = initializeApp(firebaseConfig), auth = getAuth(fbApp), db = getFire
 var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
+var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
 var convs = [], cat = "전체", idx = 0, shown = {};
 
 function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 async function save() {
   try {
+    var cs = JSON.stringify(catList);
+    if (cs !== syncedCats) { await setDoc(doc(db, "chats", "__cats"), { cats: catList }); syncedCats = cs; }
     for (var i = 0; i < convs.length; i++) {
       var c = convs[i], s = JSON.stringify(c);
       if (synced[c.id] !== s) { await setDoc(doc(db, "chats", c.id), c); synced[c.id] = s; }
@@ -160,11 +180,16 @@ async function save() {
 }
 async function loadRemote() {
   var snap = await getDocs(collection(db, "chats"));
-  convs = []; synced = {};
-  snap.forEach(function (d) { var c = d.data(); c.id = d.id; convs.push(c); synced[c.id] = JSON.stringify(c); });
+  convs = []; synced = {}; catList = DEFAULT_CATS.slice();
+  snap.forEach(function (d) {
+    var c = d.data();
+    if (d.id === "__cats") { if (Array.isArray(c.cats) && c.cats.length) catList = c.cats; return; }
+    c.id = d.id; convs.push(c); synced[c.id] = JSON.stringify(c);
+  });
+  syncedCats = JSON.stringify(catList);
 }
 function cats() {
-  var s = DEFAULT_CATS.slice();
+  var s = catList.slice();
   convs.forEach(function (c) { if (s.indexOf(c.cat) < 0) s.push(c.cat); });
   return s;
 }
@@ -362,58 +387,56 @@ function guessCat(text) {
   return bn >= 3 ? best : "";
 }
 
-/* 붙여넣기 파서 */
-var U = "(?:나|me|user|you said|you|사용자|유저|human)", A = "(?:ai 모드|ai|assistant|claude|chatgpt said|chatgpt|gemini|제미나이|챗지피티|model|bot)";
-var LABEL = new RegExp("^\\s*(?:(" + U + ")|(" + A + "))\\s*[:：]\\s*(.*)$", "i");
-function parse(text) {
-  var msgs = [], cur = null, labeled = false;
-  text.replace(/\r/g, "").split("\n").forEach(function (line) {
-    var m = line.match(LABEL);
-    if (m) { labeled = true; cur = { r: m[1] ? "u" : "a", t: m[3] }; msgs.push(cur); }
-    else if (cur) cur.t += "\n" + line;
-    else if (line.trim()) { cur = { r: "u", t: line }; msgs.push(cur); }
-  });
-  if (!labeled) {
-    msgs = [{ r: "a", t: text.trim() }];
-  }
-  return msgs.map(function (m) {
-    return { r: m.r, t: m.t.trim() };
-  }).filter(function (m) { return m.t; });
+/* 나 / AI 칸 따로 입력 */
+var turns = [];
+function count() {
+  var n = 0; turns.forEach(function (t) { if (t.u.trim()) n++; if (t.a.trim()) n++; });
+  $("fPrev").textContent = n ? "말풍선 " + n + "개" : "";
 }
-function applyMeta() {
-  var lines = $("fText").value.replace(/\r/g, "").split("\n"), meta = {}, i = 0, found = false;
-  while (i < lines.length) {
-    var m = lines[i].match(/^\s*(제목|카테고리|날짜)\s*[:：]\s*(.*)$/);
-    if (!m) { if (!lines[i].trim() && found) { i++; continue; } break; }
-    meta[m[1]] = m[2].trim(); found = true; i++;
-  }
-  if (!found) return;
-  if (meta["제목"]) $("fTitle").value = meta["제목"];
-  if (meta["카테고리"]) $("fCat").value = meta["카테고리"];
-  var d = (meta["날짜"] || "").match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
-  if (d) $("fDate").value = d[1] + "-" + d[2].padStart(2, "0") + "-" + d[3].padStart(2, "0");
-  $("fText").value = lines.slice(i).join("\n");
-}
-$("fText").addEventListener("paste", function () { setTimeout(function () {
-    applyMeta(); $("fText").oninput();
-    if (!$("fCat").value.trim()) {
-      var g = guessCat($("fText").value);
-      if (g) { $("fCat").value = g; $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
+function renderTurns() {
+  var box = $("fTurns"); box.textContent = "";
+  turns.forEach(function (t, i) {
+    var w = el("div", "turn"), h = el("div", "mhead");
+    h.appendChild(el("span", "small", "#" + (i + 1)));
+    if (turns.length > 1) {
+      var d = el("button", "btn danger", "삭제"); d.type = "button";
+      d.onclick = function () { turns.splice(i, 1); renderTurns(); };
+      h.appendChild(d);
     }
-  }, 0); });
-$("fText").oninput = function () {
-  var n = parse($("fText").value).length;
-  $("fPrev").textContent = n ? "말풍선 " + n + "개로 나눠짐" : "";
-};
+    w.appendChild(h);
+    w.appendChild(el("div", "lab", "나"));
+    var tu = el("textarea", "tu"); tu.placeholder = "내 질문 붙여넣기"; tu.value = t.u;
+    tu.oninput = function () { t.u = tu.value; count(); };
+    w.appendChild(tu);
+    w.appendChild(el("div", "lab", $("fAi").value));
+    var ta = el("textarea"); ta.placeholder = "AI 답변 붙여넣기"; ta.value = t.a;
+    ta.oninput = function () { t.a = ta.value; count(); };
+    ta.addEventListener("paste", function () { setTimeout(function () {
+      if (!$("fCat").value.trim()) {
+        var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
+        if (g) { $("fCat").value = g; $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
+      }
+    }, 0); });
+    w.appendChild(ta);
+    box.appendChild(w);
+  });
+  count();
+}
+function resetTurns() { turns = [{ u: "", a: "" }]; renderTurns(); }
+$("fAddTurn").onclick = function () { turns.push({ u: "", a: "" }); renderTurns(); };
+$("fAi").onchange = renderTurns;
+resetTurns();
 $("fSave").onclick = function () {
-  applyMeta();
-  var msgs = parse($("fText").value);
-  if (!msgs.length) { $("fPrev").textContent = "대화 내용부터 붙여넣어"; return; }
+  var msgs = [];
+  turns.forEach(function (t) {
+    if (t.u.trim()) msgs.push({ r: "u", t: t.u.trim() });
+    if (t.a.trim()) msgs.push({ r: "a", t: t.a.trim() });
+  });
+  if (!msgs.length) { $("fPrev").textContent = "나 / AI 칸에 내용부터 넣어줘"; return; }
   var title = $("fTitle").value.trim() || msgs[0].t.split("\n")[0].slice(0, 40);
   var c = { id: "c" + Date.now(), title: title, cat: $("fCat").value.trim() || guessCat(msgs.map(function (m) { return m.t; }).join("\n")) || "기타", date: $("fDate").value || today(), ai: $("fAi").value, msgs: msgs };
   convs.push(c); save();
-  ["fTitle", "fText", "fPrev"].forEach(function (i) { var e = $(i); if (e.value != null && e.tagName !== "DIV") e.value = ""; });
-  $("fPrev").textContent = ""; $("pAdd").hidden = true;
+  $("fTitle").value = ""; resetTurns(); $("pAdd").hidden = true;
   cat = "전체"; idx = list().findIndex(function (x) { return x.id === c.id; }); render();
 };
 
@@ -433,8 +456,57 @@ $("bIn").onclick = function () {
   } catch (e) { $("bMsg").textContent = "JSON 형식이 안 맞아"; }
 };
 
-$("tAdd").onclick = function () { $("pAdd").hidden = !$("pAdd").hidden; $("pBak").hidden = true; if (!$("fDate").value) $("fDate").value = today(); };
-$("tBak").onclick = function () { $("pBak").hidden = !$("pBak").hidden; $("pAdd").hidden = true; };
+/* 카테고리 관리 */
+function renderCatPanel() {
+  var box = $("catList"); box.textContent = "";
+  cats().forEach(function (name) {
+    var row = el("div", "crow"), inp = el("input"); inp.value = name; row.appendChild(inp);
+    if (name === "기타") { inp.disabled = true; }
+    else {
+      var ok = el("button", "btn", "수정"), del = el("button", "btn danger", "삭제"); ok.type = del.type = "button";
+      ok.onclick = function () { renameCat(name, inp.value.trim()); };
+      del.onclick = function () { deleteCat(name); };
+      row.appendChild(ok); row.appendChild(del);
+    }
+    box.appendChild(row);
+  });
+}
+function renameCat(a, b) {
+  if (!b || b === a) return;
+  catList = cats();
+  if (catList.indexOf(b) >= 0) { $("cMsg").textContent = "이미 있는 이름이야"; return; }
+  catList[catList.indexOf(a)] = b;
+  convs.forEach(function (c) { if (c.cat === a) c.cat = b; });
+  if (cat === a) cat = b;
+  save(); render(); renderCatPanel(); $("cMsg").textContent = "바꿨어";
+}
+function deleteCat(a) {
+  var n = convs.filter(function (c) { return c.cat === a; }).length;
+  if (!confirm("“" + a + "” 삭제할까?" + (n ? "\n대화 " + n + "개는 기타로 이동해." : ""))) return;
+  catList = cats().filter(function (x) { return x !== a; });
+  if (catList.indexOf("기타") < 0) catList.push("기타");
+  convs.forEach(function (c) { if (c.cat === a) c.cat = "기타"; });
+  if (cat === a) cat = "전체";
+  idx = 0; save(); render(); renderCatPanel(); $("cMsg").textContent = "삭제했어";
+}
+function addCat() {
+  var v = $("cNew").value.trim(); if (!v) return;
+  catList = cats();
+  if (catList.indexOf(v) >= 0) { $("cMsg").textContent = "이미 있어"; return; }
+  catList.push(v); $("cNew").value = "";
+  save(); render(); renderCatPanel(); $("cMsg").textContent = "추가했어";
+}
+$("cAdd").onclick = addCat;
+$("cNew").addEventListener("keydown", function (e) { if (e.key === "Enter") addCat(); });
+
+function togglePanel(id) {
+  ["pAdd", "pBak", "pCat"].forEach(function (p) { $(p).hidden = p === id ? !$(p).hidden : true; });
+  if (id === "pAdd" && !$("fDate").value) $("fDate").value = today();
+  if (id === "pCat") renderCatPanel();
+}
+$("tAdd").onclick = function () { togglePanel("pAdd"); };
+$("tCat").onclick = function () { togglePanel("pCat"); };
+$("tBak").onclick = function () { togglePanel("pBak"); };
 
 var fs = 13; try { fs = +localStorage.getItem("chat:fs") || 13; } catch (e) {}
 function setFs(n) { fs = Math.max(11, Math.min(20, n)); document.documentElement.style.setProperty("--fs", fs + "px"); try { localStorage.setItem("chat:fs", fs); } catch (e) {} }
