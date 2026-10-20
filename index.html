@@ -10,7 +10,7 @@
 :root[data-theme="dark"]{--bg:#0c0a09;--fg:#f5f5f4;--mute:#a8a29e;--line:#292524;--surf:#221f1d;--acc:#f5f5f4;--accfg:#0c0a09;--card:#141211;color-scheme:dark}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",Roboto,Helvetica,Arial,sans-serif;word-break:keep-all;padding:16px 14px 40px}
-.wrap{max-width:520px;margin:0 auto}
+.wrap{max-width:680px;margin:0 auto}
 .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .logo{font-size:22px;font-weight:800;letter-spacing:-.5px}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -23,13 +23,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;min-height:300px;display:flex;flex-direction:column}
 .top{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--mute)}
 .tag{background:var(--acc);color:var(--accfg);border-radius:999px;padding:3px 10px;font-weight:600}
-h2{font-size:18px;line-height:1.35;margin:0 0 12px;letter-spacing:-.3px}
+h2{font-size:16px;line-height:1.35;margin:0 0 12px;letter-spacing:-.3px}
 .chat{display:flex;flex-direction:column;gap:8px;flex:1;cursor:pointer;min-height:140px}
 .row{display:flex;flex-direction:column;max-width:86%;animation:pop .18s ease-out}
 .row.a{align-self:flex-start;align-items:flex-start}
 .row.u{align-self:flex-end;align-items:flex-end}
 .who{font-size:11px;color:var(--mute);margin:0 6px 2px}
-.bub{padding:10px 13px;border-radius:16px;font-size:15px;line-height:1.65;overflow-wrap:anywhere}
+.bub{padding:10px 13px;border-radius:16px;font-size:var(--fs,13px);line-height:1.7;overflow-wrap:anywhere}
 .bub .h{font-weight:700;margin:0 0 4px}
 .bub .p{margin:0}
 .bub .p+.p,.bub .li+.p,.bub .p+.li,.bub .h+.p,.bub .h+.li{margin-top:6px}
@@ -65,8 +65,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:var(--mute);font-weight:400">v7</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:var(--mute);font-weight:400">v8</span></div>
     <div style="display:flex;gap:6px">
+      <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
+      <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
       <button class="btn" id="tAdd" type="button">＋ 추가</button>
       <button class="btn" id="tBak" type="button">백업</button>
       <button class="btn" id="out" type="button">로그아웃</button>
@@ -222,12 +224,6 @@ function addBubble(chat, m, conv) {
   row.appendChild(el("div", "who", m.r === "u" ? "나" : conv.ai));
   var b = el("div", "bub"); renderMd(b, m.t);
   row.appendChild(b);
-  if (m.t.length > 400) {
-    b.classList.add("clamp");
-    var mb = el("button", "more", "더보기"); mb.type = "button";
-    mb.onclick = function (e) { e.stopPropagation(); var c = b.classList.toggle("clamp"); mb.textContent = c ? "더보기" : "접기"; };
-    row.appendChild(mb);
-  }
   chat.appendChild(row);
   return row;
 }
@@ -249,7 +245,7 @@ function render() {
   card.appendChild(chat);
   var foot = el("div", "foot");
   var nb = el("button", "next", k === 0 ? "시작 ▸" : k < n ? "다음 ▸" : "끝 · 처음부터");
-  nb.type = "button"; nb.onclick = advance;
+  nb.type = "button"; nb.onclick = function () { if ((shown[c.id] || 0) >= V.length) { shown[c.id] = 0; render(); } else advance(); };
   foot.appendChild(nb); foot.appendChild(el("div", "prog", k + " / " + n));
   card.appendChild(foot);
 }
@@ -257,7 +253,7 @@ function render() {
 function advance() {
   var L = list(); if (!L.length) return;
   var c = L[idx], V = view(c), k = shown[c.id] || 0;
-  if (k >= V.length) { shown[c.id] = 0; render(); return; }
+  if (k >= V.length) return;
   shown[c.id] = k + 1;
   var chat = $("chat"); if (k === 0) chat.textContent = "";
   var row = addBubble(chat, V[k], c);
@@ -353,6 +349,11 @@ $("bIn").onclick = function () {
 $("tAdd").onclick = function () { $("pAdd").hidden = !$("pAdd").hidden; $("pBak").hidden = true; if (!$("fDate").value) $("fDate").value = today(); };
 $("tBak").onclick = function () { $("pBak").hidden = !$("pBak").hidden; $("pAdd").hidden = true; };
 
+var fs = 13; try { fs = +localStorage.getItem("chat:fs") || 13; } catch (e) {}
+function setFs(n) { fs = Math.max(11, Math.min(20, n)); document.documentElement.style.setProperty("--fs", fs + "px"); try { localStorage.setItem("chat:fs", fs); } catch (e) {} }
+$("fm").onclick = function () { setFs(fs - 1); };
+$("fp").onclick = function () { setFs(fs + 1); };
+setFs(fs);
 $("gLogin").onclick = function () { signInWithPopup(auth, new GoogleAuthProvider()).catch(function (e) { $("lErr").textContent = "로그인 실패: " + (e.code || e.message); }); };
 $("out").onclick = function () { signOut(auth); };
 setPersistence(auth, browserLocalPersistence).catch(function () {});
