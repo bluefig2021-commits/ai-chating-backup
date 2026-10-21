@@ -81,7 +81,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v10</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v11</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -436,9 +436,48 @@ function htmlToMd(html) {
   }
   return conv(doc.body, false, 0).replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+(?=\S)(?![-\d])/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+/* 대화 복사 버튼(나:, AI: 형식) 통째로 붙여넣기 */
+function importLabeled(text) {
+  if (!/^\s*나\s*[:：]/m.test(text) || !/^\s*AI\s*[:：]/m.test(text)) return false;
+  var lines = text.replace(/\r/g, "").split("\n"), meta = {}, i = 0, msgs = [], cur = null;
+  while (i < lines.length) {
+    var m = lines[i].match(/^\s*(제목|카테고리|날짜|출처)\s*[:：]\s*(.*)$/);
+    if (m) { meta[m[1]] = m[2].trim(); i++; continue; }
+    if (!lines[i].trim()) { i++; continue; }
+    break;
+  }
+  for (; i < lines.length; i++) {
+    var l = lines[i].match(/^\s*(나|AI)\s*[:：]\s?(.*)$/);
+    if (l) { cur = { r: l[1] === "나" ? "u" : "a", t: l[2] }; msgs.push(cur); }
+    else if (cur) cur.t += "\n" + lines[i];
+  }
+  var ts = [], t = { u: "", a: "" };
+  msgs.forEach(function (x) {
+    var s = x.t.trim(); if (!s) return;
+    if (x.r === "u") { if (t.u || t.a) { ts.push(t); t = { u: "", a: "" }; } t.u = s; }
+    else { if (t.a) { ts.push(t); t = { u: "", a: "" }; } t.a = s; }
+  });
+  if (t.u || t.a) ts.push(t);
+  if (!ts.length) return false;
+  if (meta["출처"]) { var so = $("fAi"); for (var q = 0; q < so.options.length; q++) if (so.options[q].value === meta["출처"]) so.value = meta["출처"]; }
+  if (meta["제목"]) $("fTitle").value = meta["제목"];
+  if (meta["카테고리"]) $("fCat").value = meta["카테고리"];
+  var d = (meta["날짜"] || "").match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+  if (d) $("fDate").value = d[1] + "-" + d[2].padStart(2, "0") + "-" + d[3].padStart(2, "0");
+  turns = ts; renderTurns(); renderFChips();
+  setTimeout(function () {
+    if ($("fCat").value.trim()) return;
+    if (hasKey()) { aiClassify(); return; }
+    var g = guessCat(turns.map(function (x) { return x.u + "\n" + x.a; }).join("\n"));
+    if (g) { $("fCat").value = g; renderFChips(); $("fPrev").textContent += " · 카테고리 자동 추천: " + g + " (바꿔도 돼)"; }
+  }, 0);
+  return true;
+}
 function pasteMd(e, ta) {
   try {
     var cd = e.clipboardData; if (!cd) return false;
+    var plain = cd.getData("text/plain");
+    if (plain && importLabeled(plain)) { e.preventDefault(); return true; }
     var html = cd.getData("text/html"); if (!html) return false;
     var md = htmlToMd(html); if (!md) return false;
     e.preventDefault();
