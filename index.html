@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>대화방</title>
+<title>AI 대화 백업</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M14 14h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H32l-10 9v-9h-8a4 4 0 0 1-4-4V18a4 4 0 0 1 4-4z' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 :root{--fs:13px;color-scheme:light}
 *{box-sizing:border-box}
@@ -82,7 +83,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v14</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v15</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -104,9 +105,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     <datalist id="cats"></datalist>
     <div class="chips" id="fCatChips" style="margin:0"></div>
     <button class="btn" id="fAiCat" type="button">✨ AI로 카테고리 자동분류</button>
-    <select id="fAi">
-      <option>ChatGPT</option><option>제미나이</option><option>구글 AI 모드</option><option>Claude</option><option>AI</option>
-    </select>
+    <select id="fAi"></select>
     <div id="fTurns" style="display:grid;gap:8px"></div>
     <button class="btn" id="fAddTurn" type="button">＋ 질문/답변 칸 추가</button>
     <div class="small" id="fPrev"></div>
@@ -120,6 +119,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
       <button class="btn" id="cAdd" type="button">＋ 추가</button>
     </div>
     <div class="small" id="cMsg">이름 바꾸면 그 카테고리 대화도 같이 바뀌어. 삭제하면 대화는 "기타"로 이동해.</div>
+    <div class="small" style="margin-top:8px"><b>AI 목록</b> · 입력할 때 고르는 AI 이름 관리</div>
+    <div id="aiList" style="display:grid;gap:6px"></div>
+    <div class="two">
+      <input id="aNew" placeholder="새 AI 이름 (예: 그록)">
+      <button class="btn" id="aAdd" type="button">＋ 추가</button>
+    </div>
+    <div class="small" id="aMsg"></div>
     <div class="small" style="margin-top:8px"><b>AI 자동분류</b> · aistudio.google.com 에서 API 키 발급받아서 넣어줘</div>
     <input id="gKey" type="password" placeholder="Gemini API 키" autocomplete="off">
     <div class="two">
@@ -171,14 +177,16 @@ const fbApp = initializeApp(firebaseConfig), auth = getAuth(fbApp), db = getFire
 var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
-var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
+var DEFAULT_AIS = ["ChatGPT", "제미나이", "구글 AI 모드", "Claude", "그록", "AI"];
+var aiList = DEFAULT_AIS.slice();
+var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify([DEFAULT_CATS, DEFAULT_AIS]);
 var convs = [], cat = "전체", idx = 0, shown = {};
 
 function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 async function save() {
   try {
-    var cs = JSON.stringify(catList);
-    if (cs !== syncedCats) { await setDoc(doc(db, "chats", "__cats"), { cats: catList }); syncedCats = cs; }
+    var cs = JSON.stringify([catList, aiList]);
+    if (cs !== syncedCats) { await setDoc(doc(db, "chats", "__cats"), { cats: catList, ais: aiList }); syncedCats = cs; }
     for (var i = 0; i < convs.length; i++) {
       var c = convs[i], s = JSON.stringify(c);
       if (synced[c.id] !== s) { await setDoc(doc(db, "chats", c.id), c); synced[c.id] = s; }
@@ -192,13 +200,13 @@ async function save() {
 }
 async function loadRemote() {
   var snap = await getDocs(collection(db, "chats"));
-  convs = []; synced = {}; catList = DEFAULT_CATS.slice();
+  convs = []; synced = {}; catList = DEFAULT_CATS.slice(); aiList = DEFAULT_AIS.slice();
   snap.forEach(function (d) {
     var c = d.data();
-    if (d.id === "__cats") { if (Array.isArray(c.cats) && c.cats.length) catList = c.cats; return; }
+    if (d.id === "__cats") { if (Array.isArray(c.cats) && c.cats.length) catList = c.cats; if (Array.isArray(c.ais) && c.ais.length) aiList = c.ais; return; }
     c.id = d.id; convs.push(c); synced[c.id] = JSON.stringify(c);
   });
-  syncedCats = JSON.stringify(catList);
+  syncedCats = JSON.stringify([catList, aiList]);
 }
 function cats() {
   var s = catList.slice();
@@ -213,6 +221,7 @@ function fmt(d) { return d.replace(/-/g, "."); }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
 function renderChips() {
+  fillAi();
   var box = $("chips"); box.textContent = "";
   ["전체"].concat(cats()).forEach(function (c) {
     var b = el("button", "btn" + (c === cat ? " on" : ""), c);
@@ -582,6 +591,7 @@ function renderTurns() {
 function resetTurns() { turns = [{ u: "", a: "" }]; renderTurns(); }
 $("fAddTurn").onclick = function () { turns.push({ u: "", a: "" }); renderTurns(); };
 $("fAi").onchange = renderTurns;
+fillAi();
 resetTurns();
 $("fSave").onclick = async function () {
   if (!$("fCat").value.trim() && hasKey()) await aiClassify();
@@ -658,10 +668,52 @@ function addCat() {
 $("cAdd").onclick = addCat;
 $("cNew").addEventListener("keydown", function (e) { if (e.key === "Enter") addCat(); });
 
+/* AI 목록 관리 */
+function ais() {
+  var s = aiList.slice();
+  convs.forEach(function (c) { if (c.ai && s.indexOf(c.ai) < 0) s.push(c.ai); });
+  return s;
+}
+function fillAi() {
+  var sel = $("fAi"), old = sel.value; sel.textContent = "";
+  ais().forEach(function (n) { var o = document.createElement("option"); o.value = o.textContent = n; sel.appendChild(o); });
+  if (old && ais().indexOf(old) >= 0) sel.value = old;
+}
+function renderAiPanel() {
+  var box = $("aiList"); box.textContent = "";
+  aiList.forEach(function (name) {
+    var row = el("div", "crow"), inp = el("input"); inp.value = name; row.appendChild(inp);
+    var ok = el("button", "btn", "수정"), del = el("button", "btn danger", "삭제"); ok.type = del.type = "button";
+    ok.onclick = function () { renameAi(name, inp.value.trim()); };
+    del.onclick = function () { deleteAi(name); };
+    row.appendChild(ok); row.appendChild(del); box.appendChild(row);
+  });
+}
+function renameAi(a, b) {
+  if (!b || b === a) return;
+  if (aiList.indexOf(b) >= 0) { $("aMsg").textContent = "이미 있어"; return; }
+  aiList[aiList.indexOf(a)] = b;
+  convs.forEach(function (c) { if (c.ai === a) c.ai = b; });
+  save(); render(); renderAiPanel(); $("aMsg").textContent = "바꿨어 (기존 대화도 같이 바뀜)";
+}
+function deleteAi(a) {
+  if (aiList.length < 2) { $("aMsg").textContent = "최소 1개는 남겨야 해"; return; }
+  aiList = aiList.filter(function (x) { return x !== a; });
+  save(); render(); renderAiPanel(); $("aMsg").textContent = "지웠어 (기존 대화 표시는 그대로)";
+}
+function addAi() {
+  var v = $("aNew").value.trim(); if (!v) return;
+  if (aiList.indexOf(v) >= 0) { $("aMsg").textContent = "이미 있어"; return; }
+  aiList.push(v); $("aNew").value = "";
+  save(); render(); renderAiPanel(); $("aMsg").textContent = "추가했어";
+}
+$("aAdd").onclick = addAi;
+$("aNew").addEventListener("keydown", function (e) { if (e.key === "Enter") addAi(); });
+
 function togglePanel(id) {
   ["pAdd", "pBak", "pCat"].forEach(function (p) { $(p).hidden = p === id ? !$(p).hidden : true; });
   if (id === "pAdd") { if (!$("fDate").value) $("fDate").value = today(); renderFChips(); }
-  if (id === "pCat") { renderCatPanel(); $("gKey").value = lsGet("chat:gkey"); $("gModel").value = lsGet("chat:gmodel"); }
+  if (id === "pCat") { renderCatPanel(); renderAiPanel(); $("gKey").value = lsGet("chat:gkey"); $("gModel").value = lsGet("chat:gmodel"); }
 }
 $("tAdd").onclick = function () { togglePanel("pAdd"); };
 $("tCat").onclick = function () { togglePanel("pCat"); };
