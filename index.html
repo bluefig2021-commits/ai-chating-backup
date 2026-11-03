@@ -83,7 +83,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v14</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v15</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -117,14 +117,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   <section class="panel" id="pCat" hidden>
     <div id="catList" style="display:grid;gap:6px"></div>
     <div class="two">
-      <input id="cNew" placeholder="새 카테고리 이름">
+      <input id="cNew" placeholder="새 카테고리 이름" autocomplete="off">
       <button class="btn" id="cAdd" type="button">＋ 추가</button>
     </div>
     <div class="small" id="cMsg">이름 바꾸면 그 카테고리 대화도 같이 바뀌어. 삭제하면 대화는 "기타"로 이동해.</div>
     <div class="small" style="margin-top:8px"><b>AI 자동분류</b> · aistudio.google.com 에서 API 키 발급받아서 넣어줘</div>
-    <input id="gKey" type="password" placeholder="Gemini API 키" autocomplete="off">
+    <input id="gKey" type="text" placeholder="Gemini API 키" autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore style="-webkit-text-security:disc">
     <div class="two">
-      <input id="gModel" placeholder="모델 (비우면 gemini-2.5-flash)">
+      <input id="gModel" placeholder="모델 (비우면 gemini-2.5-flash)" autocomplete="off">
       <button class="btn" id="gSave" type="button">키 저장</button>
     </div>
     <div class="small" id="gMsg"></div>
@@ -173,7 +173,7 @@ var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
 var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
-var convs = [], cat = "전체", idx = 0, shown = {};
+var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false;
 
 function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 async function save() {
@@ -498,12 +498,12 @@ function pickChips(box, input, onPick) {
   if (cur && names.indexOf(cur) < 0) names.push(cur);
   names.forEach(function (name) {
     var b = el("button", "btn" + (name === cur ? " on" : ""), name); b.type = "button";
-    b.onclick = function () { input.value = name; if (onPick) onPick(name); pickChips(box, input, onPick); };
+    b.onclick = function () { input.value = name; if (input.id === "fCat") catPicked = true; if (onPick) onPick(name); pickChips(box, input, onPick); };
     box.appendChild(b);
   });
 }
 function renderFChips() { pickChips($("fCatChips"), $("fCat"), null); }
-$("fCat").oninput = renderFChips;
+$("fCat").oninput = function () { catPicked = !!$("fCat").value.trim(); renderFChips(); };
 
 /* Gemini 자동분류 */
 function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
@@ -531,12 +531,14 @@ async function doClassify() {
     var v = JSON.parse(out.replace(/```json|```/g, "").trim());
     var name = String(v.cat || "").trim().slice(0, 20);
     if (!name) throw new Error("빈 답변");
+    /* 기다리는 동안 내가 직접 골랐으면 AI가 덮어쓰지 않음 */
+    if (catPicked) { $("fPrev").textContent = ""; return $("fCat").value; }
     $("fCat").value = name; renderFChips();
     $("fPrev").textContent = "AI 분류: " + name + (cats().indexOf(name) < 0 ? " (새 카테고리로 만들어질 거야)" : "") + " · 바꿔도 돼";
     return name;
   } catch (e) { $("fPrev").textContent = "AI 분류 실패: " + (e.message || e); return ""; }
 }
-$("fAiCat").onclick = function () { aiClassify(); };
+$("fAiCat").onclick = function () { catPicked = false; aiClassify(); };
 $("gSave").onclick = function () {
   try {
     localStorage.setItem("chat:gkey", $("gKey").value.trim()); localStorage.setItem("chat:gmodel", $("gModel").value.trim());
@@ -595,7 +597,7 @@ $("fSave").onclick = async function () {
   var title = $("fTitle").value.trim() || msgs[0].t.split("\n")[0].slice(0, 40);
   var c = { id: "c" + Date.now(), title: title, cat: $("fCat").value.trim() || guessCat(msgs.map(function (m) { return m.t; }).join("\n")) || "기타", date: $("fDate").value || today(), ai: $("fAi").value, msgs: msgs };
   convs.push(c); save();
-  $("fTitle").value = ""; $("fCat").value = ""; resetTurns(); $("pAdd").hidden = true;
+  $("fTitle").value = ""; $("fCat").value = ""; catPicked = false; resetTurns(); $("pAdd").hidden = true;
   cat = "전체"; idx = list().findIndex(function (x) { return x.id === c.id; }); render();
 };
 
@@ -619,7 +621,7 @@ $("bIn").onclick = function () {
 function renderCatPanel() {
   var box = $("catList"); box.textContent = "";
   cats().forEach(function (name) {
-    var row = el("div", "crow"), inp = el("input"); inp.value = name; row.appendChild(inp);
+    var row = el("div", "crow"), inp = el("input"); inp.value = name; inp.autocomplete = "off"; row.appendChild(inp);
     if (name === "기타") { inp.disabled = true; }
     else {
       var ok = el("button", "btn", "수정"), del = el("button", "btn danger", "삭제"); ok.type = del.type = "button";
