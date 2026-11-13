@@ -83,7 +83,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v15</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v17</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -173,7 +173,16 @@ var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
 var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
-var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false;
+var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, ready = false;
+function saveCache() { try { localStorage.setItem("chat:cache", JSON.stringify({ convs: convs, catList: catList })); } catch (e) {} }
+function loadCache() {
+  try {
+    var o = JSON.parse(localStorage.getItem("chat:cache") || "null");
+    if (o && Array.isArray(o.convs) && o.convs.length) { convs = o.convs; if (Array.isArray(o.catList) && o.catList.length) catList = o.catList; return true; }
+  } catch (e) {}
+  return false;
+}
+function notReady() { if (ready) return false; status("서버에서 최신 상태 확인 중이라 잠깐만 기다려줘"); return true; }
 
 function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 async function save() {
@@ -188,11 +197,10 @@ async function save() {
     for (var j = 0; j < ids.length; j++) {
       if (!convs.some(function (x) { return x.id === ids[j]; })) { await deleteDoc(doc(db, "chats", ids[j])); delete synced[ids[j]]; }
     }
-    status("저장됨");
+    status("저장됨"); saveCache();
   } catch (e) { status("저장 실패: Firestore 규칙 확인해봐 (" + (e.code || e.message) + ")"); }
 }
-async function loadRemote() {
-  var snap = await getDocs(collection(db, "chats"));
+function applySnap(snap) {
   convs = []; synced = {}; catList = DEFAULT_CATS.slice();
   snap.forEach(function (d) {
     var c = d.data();
@@ -200,6 +208,10 @@ async function loadRemote() {
     c.id = d.id; convs.push(c); synced[c.id] = JSON.stringify(c);
   });
   syncedCats = JSON.stringify(catList);
+}
+async function loadRemote() {
+  applySnap(await getDocs(collection(db, "chats")));
+  saveCache();
 }
 function cats() {
   var s = catList.slice();
@@ -323,7 +335,7 @@ $("rand").onclick = function () {
   idx = j; render();
 };
 $("del").onclick = function () {
-  if (editing) return;
+  if (editing || notReady()) return;
   var L = list(); if (!L.length) return;
   var c = L[idx];
   if (!confirm("“" + c.title + "” 삭제할까?")) return;
@@ -336,7 +348,7 @@ document.addEventListener("keydown", function (e) {
 
 var editing = false, draft = null;
 function startEdit() {
-  if (editing) return;
+  if (editing || notReady()) return;
   var L = list(); if (!L.length) return;
   var c = L[idx];
   draft = { id: c.id, title: c.title, cat: c.cat, date: c.date, ai: c.ai, msgs: c.msgs.map(function (m) { return { r: m.r, t: m.t }; }) };
@@ -587,6 +599,7 @@ $("fAddTurn").onclick = function () { turns.push({ u: "", a: "" }); renderTurns(
 $("fAi").onchange = renderTurns;
 resetTurns();
 $("fSave").onclick = async function () {
+  if (notReady()) return;
   if (!$("fCat").value.trim() && hasKey()) await aiClassify();
   var msgs = [];
   turns.forEach(function (t) {
@@ -634,6 +647,7 @@ function renderCatPanel() {
   renderFChips();
 }
 function renameCat(a, b) {
+  if (notReady()) return;
   if (!b || b === a) return;
   catList = cats();
   if (catList.indexOf(b) >= 0) { $("cMsg").textContent = "이미 있는 이름이야"; return; }
@@ -643,6 +657,7 @@ function renameCat(a, b) {
   save(); render(); renderCatPanel(); $("cMsg").textContent = "바꿨어";
 }
 function deleteCat(a) {
+  if (notReady()) return;
   var n = convs.filter(function (c) { return c.cat === a; }).length;
   if (!confirm("“" + a + "” 삭제할까?" + (n ? "\n대화 " + n + "개는 기타로 이동해." : ""))) return;
   catList = cats().filter(function (x) { return x !== a; });
@@ -652,6 +667,7 @@ function deleteCat(a) {
   idx = 0; save(); render(); renderCatPanel(); $("cMsg").textContent = "삭제했어";
 }
 function addCat() {
+  if (notReady()) return;
   var v = $("cNew").value.trim(); if (!v) return;
   catList = cats();
   if (catList.indexOf(v) >= 0) { $("cMsg").textContent = "이미 있어"; return; }
@@ -681,13 +697,15 @@ $("wm").onclick = function () { setW(wd - 60); };
 $("wp").onclick = function () { setW(wd + 60); };
 setW(wd);
 $("gLogin").onclick = function () { signInWithPopup(auth, new GoogleAuthProvider()).catch(function (e) { $("lErr").textContent = "로그인 실패: " + (e.code || e.message); }); };
-$("out").onclick = function () { signOut(auth); };
+$("out").onclick = function () { try { localStorage.removeItem("chat:cache"); } catch (e) {} signOut(auth); };
 setPersistence(auth, browserLocalPersistence).catch(function () {});
 onAuthStateChanged(auth, async function (user) {
   if (!user) { $("app").hidden = true; $("login").hidden = false; return; }
   if (user.email !== ADMIN_EMAIL) { $("lErr").textContent = "이 계정은 권한이 없어."; $("app").hidden = true; $("login").hidden = false; await signOut(auth); return; }
   $("login").hidden = true; $("app").hidden = false; status("불러오는 중…");
-  try { await loadRemote(); status(""); } catch (e) { convs = []; status("불러오기 실패: Firestore 규칙 확인해봐 (" + (e.code || e.message) + ")"); }
+  ready = false;
+  if (loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… 최신 확인 중"); }
+  try { await loadRemote(); ready = true; status("서버에서 대화 " + convs.length + "개 불러옴"); } catch (e) { if (!convs.length) convs = []; status("불러오기 실패: (" + (e.code || e.message) + ") · 새로고침 해봐"); }
   render();
 });
 </script>
