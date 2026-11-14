@@ -83,7 +83,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v17</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v18</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -173,19 +173,20 @@ var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
 var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
-var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, ready = false;
+var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, serverDone = false, touched = false;
 function saveCache() { try { localStorage.setItem("chat:cache", JSON.stringify({ convs: convs, catList: catList })); } catch (e) {} }
 function loadCache() {
   try {
     var o = JSON.parse(localStorage.getItem("chat:cache") || "null");
-    if (o && Array.isArray(o.convs) && o.convs.length) { convs = o.convs; if (Array.isArray(o.catList) && o.catList.length) catList = o.catList; return true; }
+    if (o && Array.isArray(o.convs) && o.convs.length) { convs = o.convs; synced = {}; convs.forEach(function (c) { synced[c.id] = JSON.stringify(c); }); if (Array.isArray(o.catList) && o.catList.length) { catList = o.catList; syncedCats = JSON.stringify(catList); } return true; }
   } catch (e) {}
   return false;
 }
-function notReady() { if (ready) return false; status("서버에서 최신 상태 확인 중이라 잠깐만 기다려줘"); return true; }
+function notReady() { return false; }
 
 function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 async function save() {
+  if (!serverDone) touched = true;
   try {
     var cs = JSON.stringify(catList);
     if (cs !== syncedCats) { await setDoc(doc(db, "chats", "__cats"), { cats: catList }); syncedCats = cs; }
@@ -210,8 +211,11 @@ function applySnap(snap) {
   syncedCats = JSON.stringify(catList);
 }
 async function loadRemote() {
-  applySnap(await getDocs(collection(db, "chats")));
+  var snap = await getDocs(collection(db, "chats"));
+  if (touched) return false;
+  applySnap(snap);
   saveCache();
+  return true;
 }
 function cats() {
   var s = catList.slice();
@@ -703,9 +707,14 @@ onAuthStateChanged(auth, async function (user) {
   if (!user) { $("app").hidden = true; $("login").hidden = false; return; }
   if (user.email !== ADMIN_EMAIL) { $("lErr").textContent = "이 계정은 권한이 없어."; $("app").hidden = true; $("login").hidden = false; await signOut(auth); return; }
   $("login").hidden = true; $("app").hidden = false; status("불러오는 중…");
-  ready = false;
-  if (loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… 최신 확인 중"); }
-  try { await loadRemote(); ready = true; status("서버에서 대화 " + convs.length + "개 불러옴"); } catch (e) { if (!convs.length) convs = []; status("불러오기 실패: (" + (e.code || e.message) + ") · 새로고침 해봐"); }
+  serverDone = false; touched = false;
+  if (loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… (저장/수정은 바로 가능)"); }
+  var slowT = setTimeout(function () { if (!serverDone) status("서버 응답이 느려… 계속 기다리는 중 (그동안 저장/수정은 가능해)"); }, 8000);
+  try {
+    var applied = await loadRemote();
+    status(applied ? "서버에서 대화 " + convs.length + "개 불러옴" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
+  } catch (e) { if (!convs.length) convs = []; status("서버 불러오기 실패: (" + (e.code || e.message) + ") · 사본으로 보여주는 중이야. 새로고침 해봐"); }
+  clearTimeout(slowT); serverDone = true;
   render();
 });
 </script>
