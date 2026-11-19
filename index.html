@@ -88,7 +88,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v20</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v21</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -178,7 +178,7 @@ var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
 var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
-var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, serverDone = false, touched = false;
+var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, serverDone = false, touched = false, uiMsg = "";
 function idbOpen() { return new Promise(function (res, rej) { var r = indexedDB.open("chatroom", 1); r.onupgradeneeded = function () { r.result.createObjectStore("kv"); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
 async function idbGet(k) { try { var d = await idbOpen(); return await new Promise(function (res) { var q = d.transaction("kv").objectStore("kv").get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(null); }; }); } catch (e) { return null; } }
 async function idbSet(k, v) { try { var d = await idbOpen(); await new Promise(function (res) { var t = d.transaction("kv", "readwrite"); if (v == null) t.objectStore("kv").delete(k); else t.objectStore("kv").put(v, k); t.oncomplete = res; t.onerror = res; t.onabort = res; }); } catch (e) {} }
@@ -308,7 +308,7 @@ function render() {
   var L = list(), card = $("card"); card.textContent = "";
   $("count").textContent = L.length ? (idx + 1) + " / " + L.length : "";
   $("del").style.visibility = $("edit").style.visibility = L.length ? "visible" : "hidden";
-  if (!L.length) { card.appendChild(el("div", "hint", "이 카테고리엔 아직 대화가 없어. ＋ 추가로 넣어봐")); return; }
+  if (!L.length) { card.appendChild(el("div", "hint", uiMsg || "이 카테고리엔 아직 대화가 없어. ＋ 추가로 넣어봐")); return; }
   if (idx >= L.length) idx = 0;
   if (editing) { renderEdit(card); return; }
   var c = L[idx], V = view(c), n = V.length; if (shown[c.id] === undefined) shown[c.id] = Math.min(1, n); if (shown[c.id] > n) shown[c.id] = n;
@@ -722,15 +722,24 @@ onAuthStateChanged(auth, async function (user) {
   var t0 = performance.now();
   try { localStorage.removeItem("chat:cache"); } catch (e) {}
   if (await loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… (저장/수정은 바로 가능)"); }
-  var slowT = setTimeout(function () { if (!serverDone) status("서버 응답이 느려… 계속 기다리는 중 (그동안 저장/수정은 가능해)"); }, 8000);
-  var applied = false, failMsg = "";
-  for (var attempt = 0; attempt < 2; attempt++) {
-    try { applied = await loadRemote(); failMsg = ""; break; }
-    catch (e) { failMsg = (e.code || e.message); if (attempt === 0) { status("서버 연결이 안 돼서 다시 시도하는 중…"); await new Promise(function (r) { setTimeout(r, 2500); }); } }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  uiMsg = "서버에서 불러오는 중… (대화는 안 지워졌어, 잠깐만)";
+  if (!convs.length) render();
+  var ok = false, lastErr = "";
+  for (var attempt = 0; attempt < 4 && !ok; attempt++) {
+    try {
+      var applied = await loadRemote(); ok = true; uiMsg = "";
+      status(applied ? "서버에서 대화 " + convs.length + "개 불러옴 (" + ((performance.now() - t0) / 1000).toFixed(1) + "초)" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
+    } catch (e) {
+      lastErr = (e.code || e.message);
+      uiMsg = "서버 연결이 불안정해서 다시 시도 중이야 (" + (attempt + 1) + "/4). 대화는 안 지워졌고 서버에 그대로 있어.";
+      status("⚠ " + uiMsg + " · " + lastErr);
+      if (!convs.length) render();
+      if (attempt < 3) await sleep(4000);
+    }
   }
-  if (failMsg) status("⚠ 서버에 연결 못 했어 (" + failMsg + "). 대화는 안 지워졌어, 서버에 그대로 있어. 네트워크 확인하고 새로고침 해봐. 지금 보이는 목록은 불완전할 수 있으니 저장/삭제는 하지 마.");
-  else status(applied ? "서버에서 대화 " + convs.length + "개 불러옴 (" + ((performance.now() - t0) / 1000).toFixed(1) + "초)" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
-  clearTimeout(slowT); serverDone = true;
+  if (!ok) { uiMsg = "서버에 연결 못 했어. 대화는 안 지워졌어. 네트워크(와이파이/데이터/VPN) 바꾸고 새로고침 해봐. 그동안 저장/삭제는 하지 마."; status("⚠ " + uiMsg + " · " + lastErr); }
+  serverDone = true;
   render();
 });
 </script>
