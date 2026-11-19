@@ -88,7 +88,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v19</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v20</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -162,7 +162,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 var $ = function (id) { return document.getElementById(id); };
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { initializeFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 const ADMIN_EMAIL = "raizn199x@gmail.com";
 const firebaseConfig = {
   apiKey: "AIzaSyATMcuUcUeWVmIXLAO1DAX3eAxiphf8gYc",
@@ -173,7 +173,7 @@ const firebaseConfig = {
   appId: "1:765596616012:web:fba2289033b34cd23e3be9",
   measurementId: "G-FT8GR3ZD94"
 };
-const fbApp = initializeApp(firebaseConfig), auth = getAuth(fbApp), db = getFirestore(fbApp);
+const fbApp = initializeApp(firebaseConfig), auth = getAuth(fbApp), db = initializeFirestore(fbApp, { experimentalAutoDetectLongPolling: true });
 var synced = {};
 function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
@@ -222,6 +222,7 @@ function applySnap(snap) {
 }
 async function loadRemote() {
   var snap = await getDocs(collection(db, "chats"));
+  if (snap.metadata && snap.metadata.fromCache) throw new Error("서버에 연결이 안 됐어 (오프라인 상태로 읽힘)");
   if (touched) return false;
   applySnap(snap);
   saveCache();
@@ -722,10 +723,13 @@ onAuthStateChanged(auth, async function (user) {
   try { localStorage.removeItem("chat:cache"); } catch (e) {}
   if (await loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… (저장/수정은 바로 가능)"); }
   var slowT = setTimeout(function () { if (!serverDone) status("서버 응답이 느려… 계속 기다리는 중 (그동안 저장/수정은 가능해)"); }, 8000);
-  try {
-    var applied = await loadRemote();
-    status(applied ? "서버에서 대화 " + convs.length + "개 불러옴 (" + ((performance.now() - t0) / 1000).toFixed(1) + "초)" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
-  } catch (e) { if (!convs.length) convs = []; status("서버 불러오기 실패: (" + (e.code || e.message) + ") · 사본으로 보여주는 중이야. 새로고침 해봐"); }
+  var applied = false, failMsg = "";
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try { applied = await loadRemote(); failMsg = ""; break; }
+    catch (e) { failMsg = (e.code || e.message); if (attempt === 0) { status("서버 연결이 안 돼서 다시 시도하는 중…"); await new Promise(function (r) { setTimeout(r, 2500); }); } }
+  }
+  if (failMsg) status("⚠ 서버에 연결 못 했어 (" + failMsg + "). 대화는 안 지워졌어, 서버에 그대로 있어. 네트워크 확인하고 새로고침 해봐. 지금 보이는 목록은 불완전할 수 있으니 저장/삭제는 하지 마.");
+  else status(applied ? "서버에서 대화 " + convs.length + "개 불러옴 (" + ((performance.now() - t0) / 1000).toFixed(1) + "초)" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
   clearTimeout(slowT); serverDone = true;
   render();
 });
