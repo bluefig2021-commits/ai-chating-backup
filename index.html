@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>대화방</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M14 14h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H32l-10 9v-9h-8a4 4 0 0 1-4-4V18a4 4 0 0 1 4-4z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js">
 <style>
 :root{--fs:13px;color-scheme:light}
 *{box-sizing:border-box}
@@ -83,7 +88,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <div class="wrap" id="app" hidden>
   <div class="head">
-    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v18</span></div>
+    <div class="logo">대화방 <span style="font-size:10px;color:#aaa;font-weight:400">v19</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn" id="fm" type="button" aria-label="글자 작게">가−</button>
       <button class="btn" id="fp" type="button" aria-label="글자 크게">가＋</button>
@@ -174,12 +179,17 @@ function status(t) { $("st").textContent = t; }
 var DEFAULT_CATS = ["사회구조 뒷담", "연예인 뒷담", "기타"];
 var catList = DEFAULT_CATS.slice(), syncedCats = JSON.stringify(DEFAULT_CATS);
 var convs = [], cat = "전체", idx = 0, shown = {}, catPicked = false, serverDone = false, touched = false;
-function saveCache() { try { localStorage.setItem("chat:cache", JSON.stringify({ convs: convs, catList: catList })); } catch (e) {} }
-function loadCache() {
-  try {
-    var o = JSON.parse(localStorage.getItem("chat:cache") || "null");
-    if (o && Array.isArray(o.convs) && o.convs.length) { convs = o.convs; synced = {}; convs.forEach(function (c) { synced[c.id] = JSON.stringify(c); }); if (Array.isArray(o.catList) && o.catList.length) { catList = o.catList; syncedCats = JSON.stringify(catList); } return true; }
-  } catch (e) {}
+function idbOpen() { return new Promise(function (res, rej) { var r = indexedDB.open("chatroom", 1); r.onupgradeneeded = function () { r.result.createObjectStore("kv"); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
+async function idbGet(k) { try { var d = await idbOpen(); return await new Promise(function (res) { var q = d.transaction("kv").objectStore("kv").get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(null); }; }); } catch (e) { return null; } }
+async function idbSet(k, v) { try { var d = await idbOpen(); await new Promise(function (res) { var t = d.transaction("kv", "readwrite"); if (v == null) t.objectStore("kv").delete(k); else t.objectStore("kv").put(v, k); t.oncomplete = res; t.onerror = res; t.onabort = res; }); } catch (e) {} }
+function saveCache() { idbSet("cache", { convs: convs, catList: catList }); }
+async function loadCache() {
+  var o = await idbGet("cache");
+  if (o && Array.isArray(o.convs) && o.convs.length) {
+    convs = o.convs; synced = {}; convs.forEach(function (c) { synced[c.id] = JSON.stringify(c); });
+    if (Array.isArray(o.catList) && o.catList.length) { catList = o.catList; syncedCats = JSON.stringify(catList); }
+    return true;
+  }
   return false;
 }
 function notReady() { return false; }
@@ -701,18 +711,20 @@ $("wm").onclick = function () { setW(wd - 60); };
 $("wp").onclick = function () { setW(wd + 60); };
 setW(wd);
 $("gLogin").onclick = function () { signInWithPopup(auth, new GoogleAuthProvider()).catch(function (e) { $("lErr").textContent = "로그인 실패: " + (e.code || e.message); }); };
-$("out").onclick = function () { try { localStorage.removeItem("chat:cache"); } catch (e) {} signOut(auth); };
+$("out").onclick = function () { idbSet("cache", null); signOut(auth); };
 setPersistence(auth, browserLocalPersistence).catch(function () {});
 onAuthStateChanged(auth, async function (user) {
   if (!user) { $("app").hidden = true; $("login").hidden = false; return; }
   if (user.email !== ADMIN_EMAIL) { $("lErr").textContent = "이 계정은 권한이 없어."; $("app").hidden = true; $("login").hidden = false; await signOut(auth); return; }
   $("login").hidden = true; $("app").hidden = false; status("불러오는 중…");
   serverDone = false; touched = false;
-  if (loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… (저장/수정은 바로 가능)"); }
+  var t0 = performance.now();
+  try { localStorage.removeItem("chat:cache"); } catch (e) {}
+  if (await loadCache()) { render(); status("저장된 목록 먼저 보여주는 중… (저장/수정은 바로 가능)"); }
   var slowT = setTimeout(function () { if (!serverDone) status("서버 응답이 느려… 계속 기다리는 중 (그동안 저장/수정은 가능해)"); }, 8000);
   try {
     var applied = await loadRemote();
-    status(applied ? "서버에서 대화 " + convs.length + "개 불러옴" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
+    status(applied ? "서버에서 대화 " + convs.length + "개 불러옴 (" + ((performance.now() - t0) / 1000).toFixed(1) + "초)" : "서버 응답이 늦어서 지금 화면 기준으로 유지했어. 새로고침하면 최신으로 맞춰져");
   } catch (e) { if (!convs.length) convs = []; status("서버 불러오기 실패: (" + (e.code || e.message) + ") · 사본으로 보여주는 중이야. 새로고침 해봐"); }
   clearTimeout(slowT); serverDone = true;
   render();
